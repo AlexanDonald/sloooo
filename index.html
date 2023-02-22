@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>スロット</title>
+<style type="text/css">
+
+/* height-size */
+.h240 {
+	height:240px;
+}
+.h60 {
+	height:60px;
+}
+.font20px {
+	font-size:20px;
+	display: flex;
+}
+.font30px {
+	font-size:30px;
+}
+
+/* point-list */
+table.tbl_point-list {
+	border:0px;
+}
+table.tbl_point-list img {
+	width:69px;
+	height:50px;
+}
+
+/* slot-style */
+.row_slot {
+	height: 300px;
+	max-height: 300px;
+	min-height: 300px;
+}
+.row_slot > td {
+		min-width:300px;
+		max-width:300px;
+		text-align:center;
+}
+
+.row_credit td{
+	font-size:30px;
+}
+
+.row_slot .img_sizemax {
+	width:300px;
+	height:300px;
+	border:0px;
+}
+
+.row_button {
+	height: 100px;
+}
+
+.row_button .btn_stop {
+	width:100%;
+	height:90%;
+	font-size:30px;
+}
+
+.row_button .btn_start {
+	width:100%;
+	height:80px;
+	font-size:30px;
+}
+
+h1{
+	text-align: center;
+}
+
+body{
+	background-color: aliceblue;
+}
+
+.hit-list-text{
+	text-align: center;
+	height: 50px;
+	line-height: 50px;
+	font-weight: bold;
+}
+
+</style>
+<script language="JavaScript">
+
+/// 定数 ///
+var FORMAT_CREDIT = '';
+/// グローバル変数 ///
+var aryTimerId = new Array(0,0,0); //リール用タイマー
+var aryEndCheck = new Array(0,0,0) //STOP判定
+var aryDetect = new Array(-1,-1,-1); //当たり判定
+var stg = window.localStorage; //WebStorage
+var gblnChecks = { chk_mustdet: false, chk_msgdisplay: false }; //チェックボックス設定
+var gnumCredit = 0; //クレジット
+var gnumDetectId = 0; //確定当たり番号
+
+/**
+* 0埋めのテキストフォーマット
+* @param {number} target - 数値
+* @param {string} format - 埋めたい文字列
+*/
+var format_text = function(target, format){
+	var len = format.length;
+	//target = Math.abs(target); //TODO: マイナスの場合どう表示するか検討
+	
+	return String(format + target).slice((-1 * len));
+};
+
+/**
+* 当たり時の更新処理
+* @param {number} add_point - 数値
+*/
+var set_point = function(add_point){
+	var numPoint = 0;
+	var i = 1;
+	var j = gnumCredit;
+	var objTimerID = 0;
+
+	var countupPoint = function(){
+		var objTimerID = setTimeout(countupPoint, 1);
+		i++;
+		if(i <= add_point){
+			gnumCredit = parseInt(j) + parseInt(i);
+			document.getElementById('lblCredit').innerText = format_text(gnumCredit, FORMAT_CREDIT);
+		}else{
+			clearTimeout(objTimerID);
+		}
+	};
+	countupPoint();
+
+	gnumCredit = j + parseInt(add_point);
+	document.getElementById('lblCredit').innerText = format_text(gnumCredit, FORMAT_CREDIT);
+
+	/// WebStorage版
+	stg.setItem("credit", gnumCredit);
+};
+
+/**
+* チェック設定変更
+* @param {string} id - チェックオブジェクトID
+*/
+var onchange_check = function(id){
+	if(document.getElementById(id).checked){
+		gblnChecks[id] = true;
+	}else{
+		gblnChecks[id] = false;
+	}
+	stg.setItem(id, gblnChecks[id]);
+};
+
+/**
+* 初期表示処理
+* @param なし
+*/
+var init_page = function(){
+	/// 変数の初期化
+	var numPoint = 30;
+	
+	/// 設定読み込み(WebStorage)
+	// チェックオブジェクトを設定
+	key = "chk_mustdet";
+	if (stg.getItem(key)){
+		gblnChecks[key] = eval(stg.getItem(key));
+	}
+	document.getElementById(key).checked = gblnChecks[key];
+	key = "chk_msgdisplay";
+	if (stg.getItem(key)){
+		gblnChecks[key] = eval(stg.getItem(key));
+	}
+	document.getElementById(key).checked = gblnChecks[key];
+
+	// クレジットを設定
+	if (stg.getItem("credit")){
+		numPoint = stg.getItem("credit");
+	}
+	gnumCredit = parseInt(numPoint);
+	
+	document.getElementById("lblCredit").innerText = format_text(gnumCredit, FORMAT_CREDIT);
+};
+
+/**
+* スロット初期化処理(スタート)
+* @param なし
+*/
+var init_slot = function(){
+	var n = 0;
+	var m = gnumCredit;
+
+	document.getElementById("btn_start").disabled = true;
+	gnumDetectId = Math.floor((Math.random(1)*Math.random(1))*6+1);
+
+	var countdownPoint = function(){
+	
+		var objTimerID = setTimeout(countdownPoint, 1);
+		n++;
+
+		if(n > 1){
+			clearTimeout(objTimerID);
+		}else{
+			numPoint = parseInt(m) - parseInt(n);
+			document.getElementById('lblCredit').innerText = format_text(numPoint, FORMAT_CREDIT)
+		}
+	};
+	countdownPoint();
+
+	gnumCredit -= 1;
+
+	for(var i=0; i<3; i++){
+		//変数の初期化
+		aryEndCheck[i] = 0;
+		aryDetect[i] = -1;
+		clearTimeout(aryTimerId[i]);
+		//スロットスタート
+		document.getElementById("cel_id"+i).style.backgroundColor="#FFFFFF";
+		document.getElementById("btn_id"+i).disabled = false;
+		start_slot(i);
+	}
+};
+
+/**
+* スロット初期化処理(スタート)
+* @param {number} index - リール番号
+* @param {number} interval - タイマー間隔
+*/
+var start_slot = function(index, interval){
+	if(interval == undefined){
+		interval = 50;
+	}
+
+	// 0に近い値の確立を高めに設定
+	numRnd = Math.floor((Math.random(1)*Math.random(1))*6+1);
+
+	document.getElementById("img_id"+index).src = "img/au" + numRnd + ".png";
+	aryDetect[index] = numRnd;
+
+	if(interval < 500){
+		//STOP処理でインターバルが変更されたら少しずつ長くする
+		if(interval != 50){
+			interval = interval + 50;
+		}
+		aryTimerId[index]=setTimeout(start_slot, interval, index, interval);
+
+	}else{
+		//あたり確定の場合は指定の画像と値を設定する
+		console.log(gblnChecks['chk_mustdet']);
+		if(gblnChecks['chk_mustdet'] == true){
+			document.getElementById("img_id"+index).src = "img/au" + gnumDetectId + ".png";
+			aryDetect[index] = gnumDetectId;
+		}
+
+		document.getElementById("cel_id"+index).style.backgroundColor="#87be09";
+		aryEndCheck[index] = 1;
+		setTimeout(detection_slot,100);
+	}
+};
+
+/**
+* スロットストップ処理
+* @param {number} index - リール番号
+*/
+var stop_slot = function(index){
+	document.getElementById("btn_id"+index).disabled = true;
+	
+	if(aryEndCheck[index] == 0){
+		clearTimeout(aryTimerId[index]);
+		aryTimerId[index] = start_slot(index, 500);
+	}
+};
+
+/**
+* あたり判定処理
+* @param なし
+*/
+var detection_slot = function(){
+	var blnDetect = false;
+	var numPoint = 0;
+
+	for(var i=0; i<3; i++){
+		if(aryEndCheck[i] == 1){
+			if(i > 0){
+				if(aryDetect[i] == aryDetect[i-1]){
+					blnDetect = true;
+				}else{
+					blnDetect = false;
+					break;
+				}
+			}
+		}else{
+			blnDetect = false;
+			break;
+		}
+	}
+	
+	if(blnDetect){
+		numPoint = aryDetect[0] * aryDetect[0] *1;
+
+		if(gblnChecks['chk_msgdisplay'] == true){
+			alert("あたり\n" + numPoint + "コイン");
+		}
+		set_point(numPoint);
+	}
+
+	for(var i=0; i<3; i++){
+		if(i==2 && aryEndCheck[i] == 1 ){
+			document.getElementById("btn_start").disabled = false;
+		}else if( aryEndCheck[i] != 1 ){
+			break;
+		}
+	}
+};
+
+function audio() {
+    document.getElementById('btn_stop_audio').currentTime = 0; //連続クリックに対応
+    document.getElementById('btn_stop_audio').play(); //クリックしたら音を再生
+}
+
+</script>
+
+<audio id="btn_stop_audio">
+    <source src="audio/au.mp3">
+</audio>
+
+</HEAD>
+
+<body onload="init_page();">
+<hr>
+<h1>スロット</h1>
+<hr>
+<table border="5" align="center">
+<tr class="row_credit font30px">
+	<td align="right">
+		<span>
+			クレジット
+		</span>
+	</td>
+	<td colspan="2" align="left">
+		<span id="lblCredit"></span>
+	</td>
+</tr>
+<tr class="row_slot">
+	<td id="cel_id0">
+		<IMG class="img_sizemax" src="img/au1.png" id="img_id0">
+	</td>
+	<td id="cel_id1">
+		<IMG class="img_sizemax" src="img/au1.png" id="img_id1">
+	</td>
+	<td id="cel_id2">
+		<IMG class="img_sizemax" src="img/au1.png" id="img_id2">
+	</td>
+</tr>
+<tr class="row_button">
+	<td class="h60" align="center">
+		<input class="btn_stop" type="button" id="btn_id0" value="STOP" onClick="stop_slot(0);audio()" disabled>
+	</td>
+	<td class="h60" align="center">
+		<input class="btn_stop" type="button" id="btn_id1" value="STOP" onClick="stop_slot(1);audio()" disabled>
+	</td>
+	<td class="h60" align="center">
+		<input class="btn_stop" type="button" id="btn_id2" value="STOP" onClick="stop_slot(2);audio()" disabled>
+	</td>
+</tr>
+<tr class="row_button">
+	<td colspan="3">
+		<input class="btn_start" type="button" id="btn_start" value="BET" onClick="init_slot(); audio()">
+	</td>
+</tr>
+<tr>
+	<td colspan="3" align="left">
+	<div class="hit-list-text">当たり一覧表</div>
+	<span class="font20px">
+		<TABLE class="tbl_point-list">
+		<tr><td><img src="img/au1.png"><img src="img/au1.png"><img src="img/au1.png"></td><td>1コイン</td></tr>
+		<tr><td><img src="img/au2.png"><img src="img/au2.png"><img src="img/au2.png"></td><td>4コイン</td></tr>
+		<tr><td><img src="img/au3.png"><img src="img/au3.png"><img src="img/au3.png"></td><td>9コイン</td></tr>
+		<tr><td><img src="img/au4.png"><img src="img/au4.png"><img src="img/au4.png"></td><td>16コイン</td></tr>
+		<tr><td><img src="img/au5.png"><img src="img/au5.png"><img src="img/au5.png"></td><td>25コイン</td></tr>
+		</TABLE>
+		<TABLE class="tbl_point-list">
+			<tr><td><img src="img/au6.png"><img src="img/au6.png"><img src="img/au6.png"></td><td>36コイン</td></tr>
+		</TABLE>	
+	</span>
+	</td>
+</tr>
+</table>
+
+<input type="checkbox" id="chk_mustdet" onClick="onchange_check('chk_mustdet');"><label for="chk_mustdet">強制AU-MODE</label><br>
+<input type="checkbox" id="chk_msgdisplay" onClick="onchange_check('chk_msgdisplay');"><label for="chk_msgdisplay">当たりメッセージ表示</label><br>
+
+</body>
+</html>
